@@ -12,14 +12,24 @@ import { Provider, ModelInfo, QueryOptions, QueryResponse } from "./provider.js"
 export class CLIProxyAPIProvider implements Provider {
   name = "CLIProxyAPI";
   private baseUrl: string;
+  private apiKey: string;
 
-  constructor(baseUrl?: string) {
+  constructor(baseUrl?: string, apiKey?: string) {
     this.baseUrl = baseUrl ?? process.env.CLIPROXYAPI_URL ?? "http://localhost:8317";
+    this.apiKey = apiKey ?? process.env.CLIPROXYAPI_KEY ?? "";
+  }
+
+  private headers(): Record<string, string> {
+    const h: Record<string, string> = { "Content-Type": "application/json" };
+    if (this.apiKey) h["Authorization"] = `Bearer ${this.apiKey}`;
+    return h;
   }
 
   async healthCheck(): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/v1/models`);
+      const res = await fetch(`${this.baseUrl}/v1/models`, {
+        headers: this.headers(),
+      });
       return res.ok;
     } catch {
       return false;
@@ -27,7 +37,9 @@ export class CLIProxyAPIProvider implements Provider {
   }
 
   async listModels(): Promise<ModelInfo[]> {
-    const res = await fetch(`${this.baseUrl}/v1/models`);
+    const res = await fetch(`${this.baseUrl}/v1/models`, {
+      headers: this.headers(),
+    });
     if (!res.ok) {
       throw new Error(`Failed to list models: ${res.status} ${res.statusText}`);
     }
@@ -66,7 +78,7 @@ export class CLIProxyAPIProvider implements Provider {
 
     const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: this.headers(),
       body: JSON.stringify(body),
     });
 
