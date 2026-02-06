@@ -20,8 +20,12 @@ import { OllamaProvider } from "./providers/ollama.js";
 import { MultiProvider } from "./providers/multi-provider.js";
 import { createServer } from "./server.js";
 import { logger } from "./utils/logger.js";
+import { loadEnv } from "./utils/env.js";
 
 async function main() {
+  // Load .env before anything reads process.env
+  loadEnv();
+
   const multi = new MultiProvider();
 
   // Register CLIProxyAPI backend (subscription-based cloud models)

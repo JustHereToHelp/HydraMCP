@@ -21,6 +21,55 @@ export function createServer(provider: Provider): McpServer {
     version: "0.1.0",
   });
 
+  // --- list_models ---
+  server.tool(
+    "list_models",
+    "List all available models across all providers. Run this first to see what you can query.",
+    {},
+    async () => {
+      logger.info("list_models: fetching from all providers");
+      try {
+        const models = await provider.listModels();
+        if (models.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No models available. Make sure CLIProxyAPI or Ollama is running.",
+              },
+            ],
+          };
+        }
+
+        // Group by provider
+        const grouped = new Map<string, string[]>();
+        for (const m of models) {
+          const list = grouped.get(m.provider) ?? [];
+          list.push(m.id);
+          grouped.set(m.provider, list);
+        }
+
+        const lines: string[] = [`## Available Models (${models.length} total)`, ""];
+        for (const [prov, ids] of grouped) {
+          lines.push(`### ${prov}`);
+          for (const id of ids) {
+            lines.push(`- \`${id}\``);
+          }
+          lines.push("");
+        }
+
+        return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error(`list_models failed: ${message}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
   // --- ask_model ---
   server.tool(
     "ask_model",
