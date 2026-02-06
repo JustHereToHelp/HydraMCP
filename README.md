@@ -1,6 +1,9 @@
-# HydraMCP
+<p align="center">
+  <img src="assets/HydraMCP.jpg" width="200" />
+</p>
 
-Connect agents to agents.
+<h1 align="center">HydraMCP</h1>
+<p align="center">Connect agents to agents.</p>
 
 An MCP server that lets Claude Code query any LLM through your existing subscriptions. No extra API keys, no per-token billing. Just your monthly subscriptions working together from one terminal.
 
