@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "hydramcp": {
+      "command": "node",
+      "args": ["C:\\Users\\Beast\\Documents\\GitHub\\HydraMCP\\dist\\index.js"]
+    }
+  }
+}
