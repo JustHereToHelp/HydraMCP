@@ -35,7 +35,7 @@ you in Claude Code
 
 HydraMCP sits between Claude Code and your model providers. it routes requests to the right backend, runs comparisons in parallel, and formats results to keep your context window small and efficient.
 
-the provider interface means backends are swappable, you can swap it at anytime and change it.
+right now we support CLIProxyAPI for cloud and Ollama for local. more providers coming, and the provider interface is open so you can add your own.
 
 ## Setup
 
@@ -110,6 +110,16 @@ you can target specific backends with prefixes:
 - built with the [MCP SDK](https://github.com/modelcontextprotocol/sdk) and [Zod](https://github.com/colinhacks/zod)
 
 I built the MCP tool layer and routing logic on top of these. credit where its due.
+
+## contributing
+
+want to add a provider? the interface is simple. check `src/providers/provider.ts` for the contract and `src/providers/ollama.ts` for a working example. implement `healthCheck()`, `listModels()`, and `query()`, register it in `src/index.ts`, and you're done.
+
+providers we'd love to see:
+- LM Studio
+- OpenRouter
+- direct API keys (OpenAI, Anthropic, Google)
+- anything else that speaks HTTP
 
 ## license
 
