@@ -3,7 +3,7 @@
  *
  * Architecture:
  * 1. MCP SDK handles the JSON-RPC protocol over stdio
- * 2. We register 3 tools: ask_model, compare_models, consensus
+ * 2. We register 5 tools: list_models, ask_model, compare_models, consensus, synthesize
  * 3. Each tool validates input with Zod, calls the provider, formats output
  * 4. The provider is injected — today it's CLIProxyAPI, tomorrow it could be anything
  */
@@ -13,6 +13,7 @@ import { Provider } from "./providers/provider.js";
 import { askModelSchema, askModel } from "./tools/ask-model.js";
 import { compareModelsSchema, compareModels } from "./tools/compare-models.js";
 import { consensusSchema, consensus } from "./tools/consensus.js";
+import { synthesizeSchema, synthesize } from "./tools/synthesize.js";
 import { logger } from "./utils/logger.js";
 
 export function createServer(provider: Provider): McpServer {
@@ -127,6 +128,29 @@ export function createServer(provider: Provider): McpServer {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         logger.error(`consensus failed: ${message}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // --- synthesize ---
+  server.tool(
+    "synthesize",
+    "Query 2-5 models in parallel, then combine their best ideas into one answer. Returns a synthesized response that's better than any single model.",
+    synthesizeSchema.shape,
+    async (input) => {
+      logger.info(
+        `synthesize: querying ${input.models.length} models, synthesizer: ${input.synthesizer_model ?? "auto"}`
+      );
+      try {
+        const result = await synthesize(provider, input);
+        return { content: [{ type: "text" as const, text: result }] };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error(`synthesize failed: ${message}`);
         return {
           content: [{ type: "text" as const, text: `Error: ${message}` }],
           isError: true,

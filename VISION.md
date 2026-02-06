@@ -12,10 +12,12 @@ so I built HydraMCP. an MCP server that lets one AI agent ask other AI agents fo
 
 four tools, one MCP server:
 
-- **ask_model** - send a prompt to any model and get a response back
-- **compare_models** - same prompt, 2-5 models in parallel, side by side results
-- **consensus** - poll multiple models and get one answer with a confidence score
 - **list_models** - see whats available across all your providers
+- **ask_model** - send a prompt to any model and get a response back
+- **compare_models** - same prompt, 2-5 models in parallel, side by side results with brief/detailed format control
+- **consensus** - poll multiple models, a separate judge model evaluates whether they agree, returns one answer with a confidence score
+
+the consensus tool is worth calling out. we tried naive keyword matching first and it was garbage. models would say the exact same thing in different words and it would report "no agreement." so we replaced it with an LLM-as-judge approach. one of the available models (auto-picked, or you choose) reads all responses and decides which ones actually agree. its models judging models. it works.
 
 the magic is that it works with your existing subscriptions. you're already paying $20/month for these services. HydraMCP just lets you actually use them together.
 
@@ -53,15 +55,21 @@ you in Claude Code
     |-- [whatever]   -> direct API, LM Studio, anything else
 ```
 
+## where we are now
+
+this started as a skeleton and now its a working system. we've run real comparisons between cloud models and local models on code reviews, bug finding, refactoring. the tools work. the routing works. the consensus judge catches agreement that keyword matching completely missed.
+
+right now we have CLIProxyAPI for cloud (OpenAI/Codex family) and Ollama for local (qwen2.5-coder). but CLIProxyAPI supports 8+ providers including Gemini, Claude, Antigravity (Gemini 3, free preview), Qwen, and a generic OpenAI-compatible passthrough for anything else. most of them are one OAuth command away.
+
 ## whats next
 
-this is v0.1. the skeleton works. GPT-5 responded through CLIProxyAPI in 3.8 seconds on the first test. the architecture compiles, the MCP tools are registered, the provider abstraction lets us swap backends without touching tool code.
+the real demo is cross-ecosystem. GPT-5 vs Gemini 3 vs Claude Sonnet vs local Qwen on the same code review. four different training philosophies, four different perspectives, one terminal. thats not a feature comparison, thats actually useful.
 
-what comes after:
-- more providers, more models
-- better consensus logic (the current one is naive and we know it)
+what we're building toward:
+- more providers authenticated (Antigravity and Claude are next, both one command away)
+- the cross-provider comparison that proves the concept
 - streaming responses
-- cost tracking across providers
+- README with real output examples from actual multi-provider comparisons
 - whatever else makes sense once we actually use this day to day
 
 the core belief stays the same though. agents should talk to agents. your subscriptions should work together. and you shouldnt have to leave your terminal to make it happen.
