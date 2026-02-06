@@ -2,11 +2,11 @@
 
 Connect agents to agents.
 
-an MCP server that lets Claude Code query any LLM through your existing subscriptions. no extra API keys, no per-token billing. just your monthly subscriptions working together from one terminal.
+An MCP server that lets Claude Code query any LLM through your existing subscriptions. No extra API keys, no per-token billing. Just your monthly subscriptions working together from one terminal.
 
 ## what it looks like
 
-four models, four ecosystems, one prompt. this is real output from a live session:
+Four models, four ecosystems, one prompt. This is real output from a live session:
 
 ```
 > compare gpt-5-codex, gemini-3, claude-sonnet, and local qwen on this function review
@@ -21,9 +21,9 @@ four models, four ecosystems, one prompt. this is real output from a live sessio
 | ollama/qwen2.5-coder:14b   | 8407ms          | 187    |
 ```
 
-all four independently found the same async bug. then each one caught something different the others missed. GPT-5 was fastest, Gemini was most thorough, Claude gave the fix direction, Qwen explained the why. different training, different strengths, one comparison.
+All four independently found the same async bug. Then each one caught something different the others missed. GPT-5 was fastest, Gemini was most thorough, Claude gave the fix direction, Qwen explained the why. Different training, different strengths, one comparison.
 
-and this is consensus with a local judge:
+And this is consensus with a local judge:
 
 ```
 > get consensus from gpt-5, gemini-3, and claude-sonnet. use local qwen as judge.
@@ -35,28 +35,28 @@ Agreement: 3/3 models (100%)
 Judge: ollama/qwen2.5-coder:14b (686ms)
 ```
 
-three cloud models polled, local model judging them. 686ms to evaluate agreement. free, no quota used.
+Three cloud models polled, local model judging them. 686ms to evaluate agreement, no quota used.
 
 ## five tools
 
-- **list_models** - see whats available across all your providers
-- **ask_model** - query any model and get a response back
-- **compare_models** - same prompt to 2-5 models in parallel, side by side with brief/detailed format
-- **consensus** - poll 3-7 models, a judge model evaluates agreement, returns one answer with confidence score
-- **synthesize** - fan out to multiple models, then combine their best ideas into one answer thats better than any individual response
+- **list_models** - See what's available across all your providers
+- **ask_model** - Query any model and get a response back
+- **compare_models** - Same prompt to 2-5 models in parallel, side by side with brief/detailed format
+- **consensus** - Poll 3-7 models, a judge model evaluates agreement, returns one answer with a confidence score
+- **synthesize** - Fan out to multiple models, then combine their best ideas into one answer that's better than any individual response
 
-from inside Claude Code you just say things like:
+From inside Claude Code you just say things like:
 - "ask gpt-5 to review this function"
 - "compare gemini and claude on this approach"
 - "get consensus from 3 models on whether this is thread safe"
 - "synthesize responses from gpt-5, gemini, claude, and qwen on how to design this API"
 
-it just works. no browser tabs, no copy pasting between apps.
+It just works. No browser tabs, no copy pasting between apps.
 
 ## how it works
 
 ```
-you in Claude Code
+You in Claude Code
     |
     HydraMCP (MCP Server)
     |
@@ -66,11 +66,11 @@ you in Claude Code
     |-- [anything]   -> direct API, LM Studio, whatever speaks HTTP
 ```
 
-HydraMCP sits between Claude Code and your model providers. it routes requests to the right backend, runs comparisons in parallel, and formats results to keep your context window small.
+HydraMCP sits between Claude Code and your model providers. It routes requests to the right backend, runs comparisons in parallel, and formats results to keep your context window small.
 
-the consensus tool uses an LLM-as-judge approach. instead of naive keyword matching, it picks a model not in the poll and has it evaluate whether the responses actually agree. it understands that "start with a monolith" and "monolith because its simpler" are the same answer.
+The consensus tool uses an LLM-as-judge approach. Instead of naive keyword matching, it picks a model not in the poll and has it evaluate whether the responses actually agree. It understands that "start with a monolith" and "monolith because it's simpler" are the same answer.
 
-the synthesize tool goes further. it collects responses from multiple models, then a synthesizer model reads all of them and builds one combined answer. best structure from one, best insights from another, best examples from a third. the result is better than any single model could produce alone.
+The synthesize tool goes further. It collects responses from multiple models, then a synthesizer model reads all of them and builds one combined answer. Best structure from one, best insights from another, best examples from a third. The result is better than any single model could produce alone.
 
 ## setup
 
@@ -78,7 +78,7 @@ the synthesize tool goes further. it collects responses from multiple models, th
 
 - Node.js 18+
 - Claude Code
-- at least one of:
+- At least one of:
   - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) (for subscription-based cloud models)
   - [Ollama](https://ollama.com) (for local models)
 
@@ -93,7 +93,7 @@ npm run build
 
 ### configure
 
-copy the example env and fill in your details:
+Copy the example env and fill in your details:
 
 ```bash
 cp .env.example .env
@@ -114,11 +114,11 @@ OLLAMA_URL=http://localhost:11434
 claude mcp add hydramcp -s user -- node /path/to/HydraMCP/dist/index.js
 ```
 
-restart Claude Code. HydraMCP will show up in your MCP tools.
+Restart Claude Code. HydraMCP will show up in your MCP tools.
 
 ### model routing
 
-you can target specific backends with prefixes:
+You can target specific backends with prefixes:
 
 - `cliproxy/gpt-5` - explicitly use CLIProxyAPI
 - `ollama/qwen2.5-coder:14b` - explicitly use Ollama
@@ -128,19 +128,19 @@ you can target specific backends with prefixes:
 
 - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) powers the subscription-based cloud backend
 - [Ollama](https://ollama.com) powers the local model backend
-- built with the [MCP SDK](https://github.com/modelcontextprotocol/sdk) and [Zod](https://github.com/colinhacks/zod)
+- Built with the [MCP SDK](https://github.com/modelcontextprotocol/sdk) and [Zod](https://github.com/colinhacks/zod)
 
-I built the MCP tool layer, routing logic, and multi-model orchestration on top of these. credit where its due.
+I built the MCP tool layer, routing logic, and multi-model orchestration on top of these. Credit where it's due.
 
 ## contributing
 
-want to add a provider? the interface is simple. check `src/providers/provider.ts` for the contract and `src/providers/ollama.ts` for a working example. implement `healthCheck()`, `listModels()`, and `query()`, register it in `src/index.ts`, and you're done.
+Want to add a provider? The interface is simple. Check `src/providers/provider.ts` for the contract and `src/providers/ollama.ts` for a working example. Implement `healthCheck()`, `listModels()`, and `query()`, register it in `src/index.ts`, and you're done.
 
-providers we'd love to see:
+Providers we'd love to see:
 - LM Studio
 - OpenRouter
-- direct API keys (OpenAI, Anthropic, Google)
-- anything else that speaks HTTP
+- Direct API keys (OpenAI, Anthropic, Google)
+- Anything else that speaks HTTP
 
 ## license
 
