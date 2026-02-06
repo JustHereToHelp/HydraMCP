@@ -66,7 +66,6 @@ You in Claude Code
     Provider Interface
     |-- CLIProxyAPI  -> cloud models (OpenAI, Google, Anthropic, etc.)
     |-- Ollama       -> local models (your hardware)
-    |-- [anything]   -> direct API, LM Studio, whatever speaks HTTP
 ```
 
 HydraMCP sits between Claude Code and your model providers. It routes requests to the right backend, runs comparisons in parallel, and formats results to keep your context window small.
@@ -77,15 +76,68 @@ The synthesize tool goes further. It collects responses from multiple models, th
 
 ## Setup
 
-### Prerequisites
+You need Node.js 18+, Claude Code, and at least one backend. The whole process takes about 5 minutes.
 
-- Node.js 18+
-- Claude Code
-- At least one of:
-  - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) (for subscription-based cloud models)
-  - [Ollama](https://ollama.com) (for local models)
+### Step 1: Set Up a Backend
 
-### Install
+You need at least one of these. Both is ideal.
+
+#### CLIProxyAPI (Cloud Models)
+
+[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) turns your existing subscriptions (ChatGPT Plus, Claude Pro, Gemini, etc.) into a local API. You authenticate once per provider, and it handles the rest.
+
+**Get the binary:**
+
+| Platform | Install |
+|----------|---------|
+| Windows | Download from [releases](https://github.com/router-for-me/CLIProxyAPI/releases) (`windows_amd64.zip`) |
+| macOS | `brew install cliproxyapi` |
+| Linux | `curl -fsSL https://raw.githubusercontent.com/brokechubb/cliproxyapi-installer/refs/heads/master/cliproxyapi-installer \| bash` |
+
+**Create `config.yaml` next to the binary:**
+
+```yaml
+port: 8317
+auth-dir: "~/.cli-proxy-api"
+api-keys:
+  - "sk-my-local-key"
+```
+
+The API key is a local passphrase you make up. It sits between HydraMCP and CLIProxyAPI on your machine. Not a provider key.
+
+**Authenticate your subscriptions:**
+
+Each subscription is one login command. A browser opens, you sign in with your existing account, done.
+
+```bash
+# Pick whichever subscriptions you have:
+./cli-proxy-api --codex-login          # ChatGPT Plus / Codex
+./cli-proxy-api --claude-login         # Claude Pro
+./cli-proxy-api --login                # Google Gemini
+./cli-proxy-api --antigravity-login    # Antigravity (free, gives Gemini 3)
+```
+
+You can authenticate as many as you want. Each one adds models to your pool. Run the same command again with a different account to add multiple credentials per provider.
+
+**Start it:**
+
+```bash
+./cli-proxy-api
+```
+
+Runs on `localhost:8317`. Leave it running.
+
+#### Ollama (Local Models)
+
+[Install Ollama](https://ollama.com), then pull a model:
+
+```bash
+ollama pull qwen2.5-coder:14b
+```
+
+Runs on `localhost:11434` by default. Good for fast operations like judging consensus without using cloud quota.
+
+### Step 2: Install HydraMCP
 
 ```bash
 git clone https://github.com/Pickle-Pixel/HydraMCP.git
@@ -94,30 +146,32 @@ npm install
 npm run build
 ```
 
-### Configure
-
-Copy the example env and fill in your details:
+### Step 3: Configure
 
 ```bash
 cp .env.example .env
 ```
 
-```env
-# CLIProxyAPI backend
-CLIPROXYAPI_URL=http://localhost:8317
-CLIPROXYAPI_KEY=your-key-here
+Edit `.env` to match your backends:
 
-# Ollama backend
+```env
+# CLIProxyAPI (skip if not using)
+CLIPROXYAPI_URL=http://localhost:8317
+CLIPROXYAPI_KEY=sk-my-local-key
+
+# Ollama (skip if not using)
 OLLAMA_URL=http://localhost:11434
 ```
 
-### Register with Claude Code
+The `CLIPROXYAPI_KEY` should match the key you put in `config.yaml`.
+
+### Step 4: Register with Claude Code
 
 ```bash
 claude mcp add hydramcp -s user -- node /path/to/HydraMCP/dist/index.js
 ```
 
-Restart Claude Code. HydraMCP will show up in your MCP tools.
+Restart Claude Code. Type "list models" and you should see everything you authenticated.
 
 ### Model Routing
 
@@ -131,7 +185,7 @@ You can target specific backends with prefixes:
 
 - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) powers the subscription-based cloud backend
 - [Ollama](https://ollama.com) powers the local model backend
-- Built with the [MCP SDK](https://github.com/modelcontextprotocol/sdk) and [Zod](https://github.com/colinhacks/zod)
+- Built with the [MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk) and [Zod](https://github.com/colinhacks/zod)
 
 I built the MCP tool layer, routing logic, and multi-model orchestration on top of these. Credit where it's due.
 
