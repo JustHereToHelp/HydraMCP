@@ -35,7 +35,7 @@ you in Claude Code
 
 HydraMCP sits between Claude Code and your model providers. it routes requests to the right backend, runs comparisons in parallel, and formats results to keep your context window small and efficient.
 
-the provider interface means backends are swappable. if one dies, plug in another. the tool layer stays the same.
+the provider interface means backends are swappable, you can swap it at anytime and change it.
 
 ## Setup
 
