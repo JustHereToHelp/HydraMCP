@@ -14,6 +14,7 @@ import { askModelSchema, askModel } from "./tools/ask-model.js";
 import { compareModelsSchema, compareModels } from "./tools/compare-models.js";
 import { consensusSchema, consensus } from "./tools/consensus.js";
 import { synthesizeSchema, synthesize } from "./tools/synthesize.js";
+import { sessionRecapSchema, sessionRecap } from "./tools/session-recap.js";
 import { logger } from "./utils/logger.js";
 
 export function createServer(provider: Provider): McpServer {
@@ -151,6 +152,27 @@ export function createServer(provider: Provider): McpServer {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         logger.error(`synthesize failed: ${message}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // --- session_recap ---
+  server.tool(
+    "session_recap",
+    "Read previous Claude Code sessions from disk and generate a smart-sized recap using a large-context model. Claude never sees the raw session data — only the distilled summary. Use this at the start of a new session to restore context. Supports an optional focus area to filter the recap to a specific topic.",
+    sessionRecapSchema.shape,
+    async (input) => {
+      logger.info(`session_recap: recapping ${input.sessions} sessions`);
+      try {
+        const result = await sessionRecap(provider, input);
+        return { content: [{ type: "text" as const, text: result }] };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error(`session_recap failed: ${message}`);
         return {
           content: [{ type: "text" as const, text: `Error: ${message}` }],
           isError: true,
