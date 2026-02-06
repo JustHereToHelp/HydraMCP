@@ -24,6 +24,11 @@ export const compareModelsSchema = z.object({
     .describe("List of model IDs to compare (2-5 models)"),
   prompt: z.string().describe("The prompt to send to all models"),
   system_prompt: z.string().optional().describe("Optional system prompt for all models"),
+  format: z
+    .enum(["brief", "detailed"])
+    .optional()
+    .default("detailed")
+    .describe("Response format — 'brief' for token-efficient summary, 'detailed' for full response"),
   temperature: z.number().min(0).max(2).optional(),
   max_tokens: z.number().int().positive().optional().default(1024),
 });
@@ -78,10 +83,10 @@ export async function compareModels(
   });
 
   const totalTime = Date.now() - startTime;
-  return formatComparison(compared, totalTime);
+  return formatComparison(compared, totalTime, input.format ?? "detailed");
 }
 
-function formatComparison(results: CompareResult[], totalTime: number): string {
+function formatComparison(results: CompareResult[], totalTime: number, format: string): string {
   const successful = results.filter((r) => !r.error);
   const failed = results.filter((r) => r.error);
 
@@ -107,11 +112,16 @@ function formatComparison(results: CompareResult[], totalTime: number): string {
     lines.push("");
   }
 
-  // Each model's response
+  // Each model's response (brief = first 200 chars, detailed = full)
   for (const r of successful) {
     lines.push(`### ${r.model}`);
     lines.push("");
-    lines.push(r.content);
+    if (format === "brief") {
+      const summary = r.content.slice(0, 200);
+      lines.push(summary + (r.content.length > 200 ? "..." : ""));
+    } else {
+      lines.push(r.content);
+    }
     lines.push("");
   }
 
