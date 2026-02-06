@@ -96,12 +96,12 @@ function formatComparison(results: CompareResult[], totalTime: number): string {
       a.latency_ms < b.latency_ms ? a : b
     );
 
-    lines.push("| Model | Latency | Tokens | |");
-    lines.push("|-------|---------|--------|-|");
+    lines.push("| Model | Latency | Tokens |");
+    lines.push("|-------|---------|--------|");
     for (const r of successful) {
       const badge = r.model === fastest.model ? " fastest" : "";
       lines.push(
-        `| ${r.model} | ${r.latency_ms}ms${badge} | ${r.tokens ?? "n/a"} | |`
+        `| ${r.model} | ${r.latency_ms}ms${badge} | ${r.tokens ?? "n/a"} |`
       );
     }
     lines.push("");
