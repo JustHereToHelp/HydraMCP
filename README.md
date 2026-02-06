@@ -1,10 +1,10 @@
 # HydraMCP
 
-connect agents to agents.
+Connect agents to agents.
 
-an MCP server that lets Claude Code query any LLM through your existing subscriptions. no extra API keys, no per-token billing. just your $20/month subscriptions actually working together.
+an MCP server that lets Claude Code query any LLM through your existing subscriptions. no extra API keys, no expensive billing. just your monthly subscription that you get to use your own way.
 
-## what it does
+## What does it do?
 
 four MCP tools:
 
@@ -18,9 +18,9 @@ from inside Claude Code you can say things like:
 - "compare gpt-5 and llama3 on this code"
 - "get consensus from 3 models on whether this approach is correct"
 
-and it just works. no browser tabs, no copy pasting between apps.
+and it just works that way, don't have to open 3 browsers and copy paste a ton of times.
 
-## how it works
+## How it works?
 
 ```
 you in Claude Code
@@ -33,13 +33,13 @@ you in Claude Code
     |-- [anything]   -> direct API, LM Studio, etc.
 ```
 
-HydraMCP sits between Claude Code and your model providers. it routes requests to the right backend, runs comparisons in parallel, and formats results to keep your context window lean.
+HydraMCP sits between Claude Code and your model providers. it routes requests to the right backend, runs comparisons in parallel, and formats results to keep your context window small and efficient.
 
 the provider interface means backends are swappable. if one dies, plug in another. the tool layer stays the same.
 
-## setup
+## Setup
 
-### prerequisites
+### Prerequisites
 
 - Node.js 18+
 - Claude Code
@@ -47,7 +47,7 @@ the provider interface means backends are swappable. if one dies, plug in anothe
   - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) (for subscription-based cloud models)
   - [Ollama](https://ollama.com) (for local models)
 
-### install
+### Install
 
 ```bash
 git clone https://github.com/Pickle-Pixel/HydraMCP.git
@@ -56,9 +56,9 @@ npm install
 npm run build
 ```
 
-### configure
+### Configure
 
-copy the example env and fill in your details:
+Copy the example env and fill in your details:
 
 ```bash
 cp .env.example .env
@@ -73,17 +73,17 @@ CLIPROXYAPI_KEY=your-key-here
 OLLAMA_URL=http://localhost:11434
 ```
 
-### register with Claude Code
+### Register with Claude Code
 
 ```bash
 claude mcp add hydramcp -s user -- node /path/to/HydraMCP/dist/index.js
 ```
 
-restart Claude Code. HydraMCP will show up in your MCP tools.
+Restart Claude Code. HydraMCP will show up in your MCP tools.
 
-## usage
+## Usage
 
-once registered, the tools are available in any Claude Code session:
+Once registered, the tools are available in any Claude Code session:
 
 ```
 > use list_models to show whats available
@@ -95,7 +95,7 @@ once registered, the tools are available in any Claude Code session:
 > get consensus from gpt-5, gpt-5.1, and gpt-5.2 on whether this is thread safe
 ```
 
-### model routing
+### Model Routing
 
 you can target specific backends with prefixes:
 
@@ -103,13 +103,13 @@ you can target specific backends with prefixes:
 - `ollama/llama3` - explicitly use Ollama
 - `gpt-5` - auto-detect (tries each provider)
 
-## credits
+## Credits
 
 - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) powers the subscription-based cloud backend
 - [Ollama](https://ollama.com) powers the local model backend
 - built with the [MCP SDK](https://github.com/modelcontextprotocol/sdk) and [Zod](https://github.com/colinhacks/zod)
 
-we built the MCP tool layer and routing logic on top of these. credit where its due.
+I built the MCP tool layer and routing logic on top of these. credit where its due.
 
 ## license
 
