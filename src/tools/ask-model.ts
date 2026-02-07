@@ -9,12 +9,18 @@
  *   to keep Claude Code's context window lean
  * - max_tokens defaults to 1024 (not unlimited) to prevent
  *   runaway responses from eating context
+ * - max_response_tokens enables distillation — a cheap/fast model
+ *   compresses the response before it reaches Claude's context window
  * - We return structured metadata (latency, tokens) so Claude Code
  *   can reason about cost/performance
  */
 
 import { z } from "zod";
 import { Provider, QueryResponse } from "../providers/provider.js";
+import {
+  compressResponse,
+  CompressionResult,
+} from "../utils/compress.js";
 
 export const askModelSchema = z.object({
   model: z.string().describe("Model ID to query (e.g. 'gpt-4o', 'gemini-2.5-pro')"),
@@ -36,11 +42,23 @@ export const askModelSchema = z.object({
     .optional()
     .default(1024)
     .describe("Maximum tokens in response (default: 1024)"),
+  max_response_tokens: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      "Maximum tokens in the response returned to you. If the model's response exceeds this, " +
+      "it will be distilled by a fast model to fit — preserving code, file paths, errors, " +
+      "and actionable details while stripping filler. Omit for no compression."
+    ),
   format: z
     .enum(["brief", "detailed"])
     .optional()
     .default("detailed")
-    .describe("Response format — 'brief' for token-efficient summary, 'detailed' for full response"),
+    .describe(
+      "Response format — 'brief' for token-efficient summary, 'detailed' for full response"
+    ),
 });
 
 export type AskModelInput = z.infer<typeof askModelSchema>;
@@ -55,22 +73,45 @@ export async function askModel(
     max_tokens: input.max_tokens,
   });
 
-  return formatResponse(response, input.format ?? "detailed");
+  // Compress if max_response_tokens is set
+  let compression: CompressionResult | undefined;
+  if (input.max_response_tokens) {
+    compression = await compressResponse(
+      provider,
+      response,
+      input.max_response_tokens
+    );
+  }
+
+  return formatResponse(response, input.format ?? "detailed", compression);
 }
 
-function formatResponse(response: QueryResponse, format: "brief" | "detailed"): string {
+function formatResponse(
+  response: QueryResponse,
+  format: "brief" | "detailed",
+  compression?: CompressionResult
+): string {
+  const content = compression?.content ?? response.content;
+
   if (format === "brief") {
-    return [
+    const lines = [
       `**${response.model}** (${response.latency_ms}ms)`,
       "",
-      response.content,
-    ].join("\n");
+      content,
+    ];
+    if (compression?.compressed) {
+      lines.push("");
+      lines.push(
+        `*Distilled by ${compression.compressorModel} (${compression.compressorLatency}ms)*`
+      );
+    }
+    return lines.join("\n");
   }
 
   const lines = [
     `## Response from ${response.model}`,
     "",
-    response.content,
+    content,
     "",
     "---",
     `**Latency:** ${response.latency_ms}ms`,
@@ -79,6 +120,12 @@ function formatResponse(response: QueryResponse, format: "brief" | "detailed"): 
   if (response.usage) {
     lines.push(
       `**Tokens:** ${response.usage.prompt_tokens} in → ${response.usage.completion_tokens} out (${response.usage.total_tokens} total)`
+    );
+  }
+
+  if (compression?.compressed) {
+    lines.push(
+      `**Distilled:** ${compression.originalTokens ?? "?"} → ${compression.compressedTokens ?? "?"} tokens by ${compression.compressorModel} (${compression.compressorLatency}ms)`
     );
   }
 

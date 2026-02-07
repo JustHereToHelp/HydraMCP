@@ -4,3 +4,4 @@ dist/
 .env
 .mcp.json
 TESTING.md
+.dev-notes/

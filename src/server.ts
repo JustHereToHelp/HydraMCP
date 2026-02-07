@@ -75,7 +75,15 @@ export function createServer(provider: Provider): McpServer {
   // --- ask_model ---
   server.tool(
     "ask_model",
-    "Query any AI model with a prompt. Returns the model's response with metadata.",
+    `Query any AI model with a prompt. Returns the model's response with metadata.
+
+OUTPUT: Markdown with the model's response, latency, and token usage. If max_response_tokens is set and compression occurred, includes distillation metadata (original tokens, compressed tokens, compressor model, compressor latency).
+
+WHEN TO USE: When you need another model's perspective, analysis, or capabilities. Set max_response_tokens to control how much of your context window this response consumes — the response will be distilled by a fast model to fit the budget while preserving code, file paths, errors, and actionable details.
+
+FAILURE MODES:
+- "Model query failed (4xx/5xx)" → The model or provider is unavailable. Try a different model or check that CLIProxyAPI/Ollama is running.
+- Compression silently skipped → If the compressor model is unavailable or the response already fits the budget, the raw response is returned unchanged. This is not an error.`,
     askModelSchema.shape,
     async (input) => {
       logger.info(`ask_model: querying ${input.model}`);
