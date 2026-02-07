@@ -1,6 +1,6 @@
 {
   "name": "hydramcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Multi-model MCP server — compare, vote, and synthesize across GPT, Gemini, Claude, and local models from one terminal",
   "type": "module",
   "main": "dist/index.js",

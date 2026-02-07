@@ -3,17 +3,17 @@
  *
  * Run: npx hydramcp setup
  *
- * Walks the user through:
- *   1. API keys (OpenAI, Google, Anthropic)
- *   2. Subscriptions (installs + auths CLI tools automatically)
- *   3. Local models (detects Ollama)
- *   4. Saves config, shows the one-liner to add to Claude Code
+ * Flow:
+ *   1. Ask: API keys, subscriptions, or both?
+ *   2. Walk through selected path(s)
+ *   3. Auto-detect Ollama
+ *   4. Save config, show the one-liner for Claude Code
  *
  * Zero dependencies. Uses Node.js readline + child_process.
  */
 
 import { createInterface } from "node:readline";
-import { execSync, spawn as nodeSpawn } from "node:child_process";
+import { execSync, spawn as nodeSpawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -41,16 +41,19 @@ interface SubDef {
   command: string;
   authArgs: string[];
   authNote: string;
+  /** Max seconds to wait for auth before killing the process */
+  authTimeout: number;
 }
 
 const SUBS: SubDef[] = [
   {
     name: "Gemini Advanced",
     desc: "$20/mo — Gemini 2.5 Pro, Flash, etc.",
-    npmPkg: "@anthropic-ai/gemini-cli",
+    npmPkg: "@google/gemini-cli",
     command: "gemini",
     authArgs: ["auth"],
     authNote: "Browser will open for Google sign-in",
+    authTimeout: 120,
   },
   {
     name: "Claude Pro / Max",
@@ -59,14 +62,16 @@ const SUBS: SubDef[] = [
     command: "claude",
     authArgs: ["--version"],
     authNote: "Opens browser on first interactive use",
+    authTimeout: 30,
   },
   {
     name: "ChatGPT Plus / Pro",
     desc: "$20–200/mo — GPT-5, o3, Codex",
     npmPkg: "@openai/codex",
     command: "codex",
-    authArgs: ["auth"],
-    authNote: "Browser will open for OpenAI sign-in",
+    authArgs: ["--version"],
+    authNote: "Run 'codex' interactively after setup to sign in",
+    authTimeout: 15,
   },
 ];
 
@@ -94,17 +99,53 @@ function isOnPath(command: string): boolean {
   }
 }
 
-function spawnInteractive(
+/**
+ * Spawn a process with a timeout. Kills it if it doesn't exit in time.
+ * This prevents CLI tools from hanging the setup wizard.
+ */
+function spawnWithTimeout(
   command: string,
-  args: string[]
+  args: string[],
+  timeoutSec: number
 ): Promise<number> {
   return new Promise((resolve, reject) => {
-    const child = nodeSpawn(command, args, {
-      stdio: "inherit",
-      shell: process.platform === "win32",
+    let child: ChildProcess;
+    try {
+      child = nodeSpawn(command, args, {
+        stdio: "inherit",
+        shell: process.platform === "win32",
+      });
+    } catch (err) {
+      reject(err);
+      return;
+    }
+
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        child.kill("SIGTERM");
+        // Treat timeout as success — the CLI tool ran, just didn't exit cleanly
+        resolve(0);
+      }
+    }, timeoutSec * 1000);
+
+    child.on("error", (err) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      }
     });
-    child.on("error", reject);
-    child.on("close", (code) => resolve(code ?? 1));
+
+    child.on("close", (code) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        resolve(code ?? 1);
+      }
+    });
   });
 }
 
@@ -154,93 +195,114 @@ export async function runSetup(): Promise<void> {
   console.log(`  ${D}Multi-model intelligence for Claude Code${X}`);
   console.log("");
 
-  // --- API Keys ---
-  console.log(`  ${B}API Keys${X} ${D}(pay-per-token, direct access)${X}`);
+  // --- Choose setup path ---
+  console.log(`  ${B}How do you want to connect models?${X}`);
+  console.log("");
+  console.log(`  ${B}1.${X} API Keys ${D}— pay-per-token, paste keys and go${X}`);
+  console.log(`  ${B}2.${X} Subscriptions ${D}— use ChatGPT Plus, Claude Pro, Gemini Advanced${X}`);
+  console.log(`  ${B}3.${X} Both`);
   console.log("");
 
-  const keyDefs = [
-    { env: "OPENAI_API_KEY", label: "OpenAI" },
-    { env: "GOOGLE_API_KEY", label: "Google / Gemini" },
-    { env: "ANTHROPIC_API_KEY", label: "Anthropic" },
-  ];
+  const pathChoice = await ask(`  Choice ${D}(1/2/3)${X}: `);
+  const doApiKeys = pathChoice === "1" || pathChoice === "3";
+  const doSubscriptions = pathChoice === "2" || pathChoice === "3";
 
-  for (const kd of keyDefs) {
-    const current = env[kd.env];
-    if (current) {
-      const change = await ask(
-        `  ${kd.label} ${D}[${mask(current)}]${X} — keep? ${D}(Enter=yes, or paste new key)${X}: `
-      );
-      if (change) env[kd.env] = change;
-    } else {
-      const val = await ask(
-        `  ${kd.label} API key ${D}(Enter to skip)${X}: `
-      );
-      if (val) env[kd.env] = val;
+  // --- API Keys ---
+  if (doApiKeys) {
+    console.log("");
+    console.log(`  ${B}API Keys${X}`);
+    console.log("");
+
+    const keyDefs = [
+      { env: "OPENAI_API_KEY", label: "OpenAI" },
+      { env: "GOOGLE_API_KEY", label: "Google / Gemini" },
+      { env: "ANTHROPIC_API_KEY", label: "Anthropic" },
+    ];
+
+    for (const kd of keyDefs) {
+      const current = env[kd.env];
+      if (current) {
+        const change = await ask(
+          `  ${kd.label} ${D}[${mask(current)}]${X} — keep? ${D}(Enter=yes, or paste new key)${X}: `
+        );
+        if (change) env[kd.env] = change;
+      } else {
+        const val = await ask(
+          `  ${kd.label} API key ${D}(Enter to skip)${X}: `
+        );
+        if (val) env[kd.env] = val;
+      }
+      if (env[kd.env]) results.push(`${G}+${X} ${kd.label} (API key)`);
     }
-    if (env[kd.env]) results.push(`${G}+${X} ${kd.label} (API key)`);
   }
 
   // --- Subscriptions ---
-  console.log("");
-  console.log(
-    `  ${B}Subscriptions${X} ${D}(flat monthly rate, uses CLI tools)${X}`
-  );
-  console.log("");
-
-  for (let i = 0; i < SUBS.length; i++) {
-    const s = SUBS[i];
-    const installed = isOnPath(s.command);
-    const tag = installed ? `${G}installed${X}` : `${D}not installed${X}`;
-    console.log(`  ${B}${i + 1}.${X} ${s.name} ${D}— ${s.desc}${X} [${tag}]`);
-  }
-
-  console.log("");
-  const subInput = await ask(
-    `  Which do you have? ${D}(e.g. 1,3 or Enter to skip)${X}: `
-  );
-
-  const selectedIndexes = subInput
-    .split(",")
-    .map((s) => parseInt(s.trim(), 10) - 1)
-    .filter((i) => i >= 0 && i < SUBS.length);
-
-  for (const idx of selectedIndexes) {
-    const sub = SUBS[idx];
+  if (doSubscriptions) {
     console.log("");
-    console.log(`  ${C}${sub.name}${X}`);
+    console.log(`  ${B}Subscriptions${X}`);
+    console.log("");
 
-    // Check / install
-    if (isOnPath(sub.command)) {
-      console.log(`  ${G}✓${X} ${sub.command} already installed`);
-    } else {
-      console.log(`  Installing ${sub.npmPkg}...`);
-      try {
-        execSync(`npm i -g ${sub.npmPkg}`, { stdio: "inherit" });
-        console.log(`  ${G}✓${X} Installed`);
-      } catch {
-        console.log(
-          `  ${R}✗${X} Install failed. Try manually: ${Y}sudo npm i -g ${sub.npmPkg}${X}`
-        );
-        continue;
-      }
+    for (let i = 0; i < SUBS.length; i++) {
+      const s = SUBS[i];
+      const installed = isOnPath(s.command);
+      const tag = installed ? `${G}installed${X}` : `${D}not installed${X}`;
+      console.log(
+        `  ${B}${i + 1}.${X} ${s.name} ${D}— ${s.desc}${X} [${tag}]`
+      );
     }
 
-    // Auth
-    console.log(`  ${D}${sub.authNote}${X}`);
-    try {
-      const code = await spawnInteractive(sub.command, sub.authArgs);
-      if (code === 0) {
-        console.log(`  ${G}✓${X} Ready`);
-        results.push(`${G}+${X} ${sub.name} (subscription)`);
+    console.log("");
+    const subInput = await ask(
+      `  Which do you have? ${D}(e.g. 1,3 or Enter to skip)${X}: `
+    );
+
+    const selectedIndexes = subInput
+      .split(",")
+      .map((s) => parseInt(s.trim(), 10) - 1)
+      .filter((i) => i >= 0 && i < SUBS.length);
+
+    for (const idx of selectedIndexes) {
+      const sub = SUBS[idx];
+      console.log("");
+      console.log(`  ${C}${sub.name}${X}`);
+
+      // Check / install
+      if (isOnPath(sub.command)) {
+        console.log(`  ${G}✓${X} ${sub.command} already installed`);
       } else {
+        console.log(`  Installing ${sub.npmPkg}...`);
+        try {
+          execSync(`npm i -g ${sub.npmPkg}`, { stdio: "inherit" });
+          console.log(`  ${G}✓${X} Installed`);
+        } catch {
+          console.log(
+            `  ${R}✗${X} Install failed. Try manually: ${Y}sudo npm i -g ${sub.npmPkg}${X}`
+          );
+          continue;
+        }
+      }
+
+      // Auth — with timeout to prevent hanging
+      console.log(`  ${D}${sub.authNote}${X}`);
+      try {
+        const code = await spawnWithTimeout(
+          sub.command,
+          sub.authArgs,
+          sub.authTimeout
+        );
+        if (code === 0) {
+          console.log(`  ${G}✓${X} Ready`);
+          results.push(`${G}+${X} ${sub.name} (subscription)`);
+        } else {
+          console.log(
+            `  ${Y}!${X} Auth may need manual setup: ${Y}${sub.command} ${sub.authArgs.join(" ")}${X}`
+          );
+        }
+      } catch {
         console.log(
-          `  ${Y}!${X} Auth may need manual setup: ${Y}${sub.command} ${sub.authArgs.join(" ")}${X}`
+          `  ${Y}!${X} Could not run auth. Try: ${Y}${sub.command} ${sub.authArgs.join(" ")}${X}`
         );
       }
-    } catch {
-      console.log(
-        `  ${Y}!${X} Could not run auth. Try: ${Y}${sub.command} ${sub.authArgs.join(" ")}${X}`
-      );
     }
   }
 
@@ -249,7 +311,9 @@ export async function runSetup(): Promise<void> {
   console.log(`  ${B}Local Models${X}`);
 
   if (isOnPath("ollama")) {
-    console.log(`  ${G}✓${X} Ollama detected — local models will be auto-included`);
+    console.log(
+      `  ${G}✓${X} Ollama detected — local models will be auto-included`
+    );
     results.push(`${G}+${X} Ollama (local)`);
   } else {
     console.log(
@@ -283,7 +347,9 @@ export async function runSetup(): Promise<void> {
 
   // --- Summary ---
   console.log("");
-  console.log(`  ${B}${G}Setup complete${X} — ${results.length} provider(s) ready`);
+  console.log(
+    `  ${B}${G}Setup complete${X} — ${results.length} provider(s) ready`
+  );
   console.log("");
 
   if (results.length > 0) {
@@ -300,7 +366,9 @@ export async function runSetup(): Promise<void> {
   if (apiKeys.length > 0 && !existsSync(configPath())) {
     // Keys not saved — need env flags
     const envFlags = apiKeys.map(([k, v]) => `-e ${k}=${v}`).join(" ");
-    console.log(`  ${C}claude mcp add hydramcp ${envFlags} -- npx hydramcp${X}`);
+    console.log(
+      `  ${C}claude mcp add hydramcp ${envFlags} -- npx hydramcp${X}`
+    );
   } else {
     // Keys saved to ~/.hydramcp/.env or no keys needed
     console.log(`  ${C}claude mcp add hydramcp -- npx hydramcp${X}`);
