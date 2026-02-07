@@ -16,6 +16,7 @@ import { consensusSchema, consensus } from "./tools/consensus.js";
 import { synthesizeSchema, synthesize } from "./tools/synthesize.js";
 import { sessionRecapSchema, sessionRecap } from "./tools/session-recap.js";
 import { analyzeFileSchema, analyzeFile } from "./tools/analyze-file.js";
+import { smartReadSchema, smartRead } from "./tools/smart-read.js";
 import { logger } from "./utils/logger.js";
 
 export function createServer(provider: Provider): McpServer {
@@ -61,6 +62,22 @@ export function createServer(provider: Provider): McpServer {
           lines.push("");
         }
 
+        // Session stats footer (if SmartProvider is active)
+        if ("getSessionSummary" in provider) {
+          const summary = (provider as any).getSessionSummary();
+          if (summary.totalQueries > 0) {
+            const parts = [`${summary.totalQueries} queries`];
+            if (summary.cacheHits > 0) {
+              parts.push(`${summary.cacheHits} cache hits (~${summary.cacheTokensSaved} tokens saved)`);
+            }
+            if (summary.totalFailures > 0) {
+              parts.push(`${summary.totalFailures} failures`);
+            }
+            lines.push("---");
+            lines.push(`**Session:** ${parts.join(" | ")}`);
+          }
+        }
+
         return { content: [{ type: "text" as const, text: lines.join("\n") }] };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -78,12 +95,13 @@ export function createServer(provider: Provider): McpServer {
     "ask_model",
     `Query any AI model with a prompt. Returns the model's response with metadata.
 
-OUTPUT: Markdown with the model's response, latency, and token usage. If max_response_tokens is set and compression occurred, includes distillation metadata (original tokens, compressed tokens, compressor model, compressor latency).
+OUTPUT: Markdown with the model's response, latency, and token usage. If max_response_tokens is set and compression occurred, includes distillation metadata (original tokens, compressed tokens, compressor model, compressor latency). Shows "Saved: X tokens (Y% smaller)" when compression is active. Shows "(cached)" when response is served from cache.
 
-WHEN TO USE: When you need another model's perspective, analysis, or capabilities. Set max_response_tokens to control how much of your context window this response consumes — the response will be distilled by a fast model to fit the budget while preserving code, file paths, errors, and actionable details.
+WHEN TO USE: When you need another model's perspective, analysis, or capabilities. Set max_response_tokens to control how much of your context window this response consumes — the response will be distilled by a fast model to fit the budget while preserving code, file paths, errors, and actionable details. Set include_raw=true to see both compressed and original responses for quality verification.
 
 FAILURE MODES:
 - "Model query failed (4xx/5xx)" → The model or provider is unavailable. Try a different model or check that CLIProxyAPI/Ollama is running.
+- "circuit breaker open" → The model failed too many times recently. Try a different model or wait for automatic recovery.
 - Compression silently skipped → If the compressor model is unavailable or the response already fits the budget, the raw response is returned unchanged. This is not an error.`,
     askModelSchema.shape,
     async (input) => {
@@ -226,6 +244,39 @@ FAILURE MODES:
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         logger.error(`analyze_file failed: ${message}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // --- smart_read ---
+  server.tool(
+    "smart_read",
+    `Surgical code extraction from files. Returns ONLY relevant code sections with line numbers — not analysis.
+
+OUTPUT: Markdown with extracted code sections (verbatim, with line numbers), minimal annotations, file metadata, latency, token usage. Shows "Context saved" metric. Unlike analyze_file which returns prose analysis, smart_read returns actual code you can act on directly.
+
+WHEN TO USE: When you need to read a file but only care about specific sections. Use instead of the Read tool when you have a specific intent like "find the auth logic", "show error handling", "extract the database schema". Especially valuable for large files (1000+ lines) where reading the whole file wastes context tokens. For general questions about a file, use analyze_file instead.
+
+FAILURE MODES:
+- "File not found" → The path is wrong. Retry with the correct absolute path.
+- "Binary file detected" → Only text files are supported. Do not retry with this file.
+- "File too large" → The file exceeds 800K chars. Try a specific section.
+- "No models available" → CLIProxyAPI or Ollama is not running. Tell the user to start their model provider.
+- "No relevant sections found" → Try a broader query, or use analyze_file for general analysis.
+- "Model query failed" → Try a different model or check provider status with list_models.`,
+    smartReadSchema.shape,
+    async (input) => {
+      logger.info(`smart_read: ${input.file_path}`);
+      try {
+        const result = await smartRead(provider, input);
+        return { content: [{ type: "text" as const, text: result }] };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error(`smart_read failed: ${message}`);
         return {
           content: [{ type: "text" as const, text: `Error: ${message}` }],
           isError: true,
