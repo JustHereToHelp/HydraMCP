@@ -11,7 +11,8 @@
  *   runaway responses from eating context
  * - max_response_tokens enables distillation — a cheap/fast model
  *   compresses the response before it reaches Claude's context window
- * - We return structured metadata (latency, tokens) so Claude Code
+ * - include_raw: escape hatch to see uncompressed response for quality verification
+ * - We return structured metadata (latency, tokens, savings) so Claude Code
  *   can reason about cost/performance
  */
 
@@ -59,6 +60,14 @@ export const askModelSchema = z.object({
     .describe(
       "Response format — 'brief' for token-efficient summary, 'detailed' for full response"
     ),
+  include_raw: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "When true and compression is active, include the original uncompressed response " +
+      "for quality comparison. Use this to verify distillation preserved critical details."
+    ),
 });
 
 export type AskModelInput = z.infer<typeof askModelSchema>;
@@ -83,30 +92,44 @@ export async function askModel(
     );
   }
 
-  return formatResponse(response, input.format ?? "detailed", compression);
+  return formatResponse(
+    response,
+    input.format ?? "detailed",
+    compression,
+    input.include_raw ?? false
+  );
 }
 
 function formatResponse(
   response: QueryResponse,
   format: "brief" | "detailed",
-  compression?: CompressionResult
+  compression?: CompressionResult,
+  includeRaw?: boolean
 ): string {
   const content = compression?.content ?? response.content;
+  const isCached = response.latency_ms === 0;
 
   if (format === "brief") {
+    const latencyTag = isCached ? "cached" : `${response.latency_ms}ms`;
     const lines = [
-      `**${response.model}** (${response.latency_ms}ms)`,
+      `**${response.model}** (${latencyTag})`,
       "",
       content,
     ];
     if (compression?.compressed) {
+      const saved = (compression.originalTokens ?? 0) - (compression.compressedTokens ?? 0);
       lines.push("");
       lines.push(
-        `*Distilled by ${compression.compressorModel} (${compression.compressorLatency}ms)*`
+        `*Distilled by ${compression.compressorModel} — saved ${saved} tokens*`
       );
     }
     return lines.join("\n");
   }
+
+  // Detailed format
+  const latencyText = isCached
+    ? `**Latency:** 0ms (cached)`
+    : `**Latency:** ${response.latency_ms}ms`;
 
   const lines = [
     `## Response from ${response.model}`,
@@ -114,7 +137,7 @@ function formatResponse(
     content,
     "",
     "---",
-    `**Latency:** ${response.latency_ms}ms`,
+    latencyText,
   ];
 
   if (response.usage) {
@@ -124,13 +147,27 @@ function formatResponse(
   }
 
   if (compression?.compressed) {
+    const orig = compression.originalTokens ?? 0;
+    const comp = compression.compressedTokens ?? 0;
+    const saved = orig - comp;
+    const pct = orig > 0 ? Math.round((saved / orig) * 100) : 0;
+
     lines.push(
-      `**Distilled:** ${compression.originalTokens ?? "?"} → ${compression.compressedTokens ?? "?"} tokens by ${compression.compressorModel} (${compression.compressorLatency}ms)`
+      `**Distilled:** ${orig} → ${comp} tokens by ${compression.compressorModel} (${compression.compressorLatency}ms)`
     );
+    lines.push(`**Saved:** ${saved} tokens (${pct}% smaller)`);
   }
 
   if (response.finish_reason && response.finish_reason !== "stop") {
     lines.push(`**Note:** Response ended due to: ${response.finish_reason}`);
+  }
+
+  // Escape hatch: include raw uncompressed response
+  if (includeRaw && compression?.compressed && compression.rawContent) {
+    lines.push("");
+    lines.push(
+      `<details>\n<summary>Raw response (${compression.originalTokens ?? "?"} tokens, before distillation)</summary>\n\n${compression.rawContent}\n\n</details>`
+    );
   }
 
   return lines.join("\n");

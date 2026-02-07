@@ -18,6 +18,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CLIProxyAPIProvider } from "./providers/cliproxyapi.js";
 import { OllamaProvider } from "./providers/ollama.js";
 import { MultiProvider } from "./providers/multi-provider.js";
+import { SmartProvider } from "./orchestrator/index.js";
 import { createServer } from "./server.js";
 import { logger } from "./utils/logger.js";
 import { loadEnv } from "./utils/env.js";
@@ -45,7 +46,10 @@ async function main() {
     );
   }
 
-  const server = createServer(multi);
+  // Wrap with SmartProvider (orchestrator: circuit breaker, caching, metrics)
+  const provider = new SmartProvider(multi);
+
+  const server = createServer(provider);
   const transport = new StdioServerTransport();
   await server.connect(transport);
 

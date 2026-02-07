@@ -5,6 +5,9 @@
  * (server-side — Claude never sees the raw content), sends it to a
  * large-context model, optionally compresses the result, and returns
  * a concise answer. Zero context tokens burned on file content.
+ *
+ * The "Context saved" metric shows exactly how many tokens Claude
+ * avoided by not reading the file itself.
  */
 
 import { z } from "zod";
@@ -62,6 +65,14 @@ export const analyzeFileSchema = z.object({
     .default("detailed")
     .describe(
       "Response format — 'brief' for token-efficient summary, 'detailed' for full response"
+    ),
+  include_raw: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "When true and compression is active, include the original uncompressed response " +
+      "for quality comparison. Use this to verify distillation preserved critical details."
     ),
 });
 
@@ -224,7 +235,8 @@ Question: ${input.prompt}`;
       fileLines,
       fileChars,
       totalMs,
-    }
+    },
+    input.include_raw ?? false
   );
 }
 
@@ -244,25 +256,37 @@ function formatResponse(
   response: QueryResponse,
   format: "brief" | "detailed",
   compression: CompressionResult | undefined,
-  meta: FileMetadata
+  meta: FileMetadata,
+  includeRaw: boolean
 ): string {
   const content = compression?.content ?? response.content;
+
+  // Calculate context savings: tokens Claude would have burned reading the file
+  const fileTokensEstimate = Math.ceil(meta.fileChars / 4);
+  const responseTokens =
+    compression?.compressedTokens ??
+    response.usage?.completion_tokens ??
+    Math.ceil(content.length / 4);
+  const contextSaved = fileTokensEstimate - responseTokens;
 
   if (format === "brief") {
     const lines = [
       `**${meta.fileName}** → ${response.model} (${meta.totalMs}ms)`,
       "",
       content,
+      "",
+      `*Context saved: ~${contextSaved.toLocaleString()} tokens*`,
     ];
     if (compression?.compressed) {
-      lines.push("");
+      const saved = (compression.originalTokens ?? 0) - (compression.compressedTokens ?? 0);
       lines.push(
-        `*Distilled by ${compression.compressorModel} (${compression.compressorLatency}ms)*`
+        `*Distilled by ${compression.compressorModel} — saved additional ${saved} tokens*`
       );
     }
     return lines.join("\n");
   }
 
+  // Detailed format
   const lines = [
     `## File Analysis: ${meta.fileName}`,
     "",
@@ -271,6 +295,7 @@ function formatResponse(
     "---",
     `**File:** \`${meta.filePath}\` (${meta.fileLines} lines, ${meta.fileChars} chars)`,
     `**Model:** ${response.model} | **Latency:** ${response.latency_ms}ms | **Total:** ${meta.totalMs}ms`,
+    `**Context saved:** ~${contextSaved.toLocaleString()} tokens (Claude didn't read ${meta.fileChars.toLocaleString()} chars)`,
   ];
 
   if (response.usage) {
@@ -280,8 +305,22 @@ function formatResponse(
   }
 
   if (compression?.compressed) {
+    const orig = compression.originalTokens ?? 0;
+    const comp = compression.compressedTokens ?? 0;
+    const saved = orig - comp;
+    const pct = orig > 0 ? Math.round((saved / orig) * 100) : 0;
+
     lines.push(
-      `**Distilled:** ${compression.originalTokens ?? "?"} → ${compression.compressedTokens ?? "?"} tokens by ${compression.compressorModel} (${compression.compressorLatency}ms)`
+      `**Distilled:** ${orig} → ${comp} tokens by ${compression.compressorModel} (${compression.compressorLatency}ms)`
+    );
+    lines.push(`**Saved:** ${saved} tokens (${pct}% smaller)`);
+  }
+
+  // Escape hatch: include raw uncompressed response
+  if (includeRaw && compression?.compressed && compression.rawContent) {
+    lines.push("");
+    lines.push(
+      `<details>\n<summary>Raw response (${compression.originalTokens ?? "?"} tokens, before distillation)</summary>\n\n${compression.rawContent}\n\n</details>`
     );
   }
 

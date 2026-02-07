@@ -22,6 +22,8 @@ export interface CompressionResult {
   compressorLatency?: number;
   originalTokens?: number;
   compressedTokens?: number;
+  /** Original response content before compression (for escape hatch / quality comparison). */
+  rawContent?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +190,7 @@ export async function compressResponse(
       compressorLatency: compressResult.latency_ms,
       originalTokens,
       compressedTokens,
+      rawContent: response.content,
     };
   } catch (err) {
     logger.warn(
