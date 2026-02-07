@@ -163,7 +163,19 @@ export function createServer(provider: Provider): McpServer {
   // --- session_recap ---
   server.tool(
     "session_recap",
-    "Read previous Claude Code sessions from disk and generate a smart-sized recap using a large-context model. Claude never sees the raw session data — only the distilled summary. Use this at the start of a new session to restore context. Supports an optional focus area to filter the recap to a specific topic.",
+    `Read previous Claude Code sessions from disk and generate a smart-sized recap using a large-context model. Claude never sees the raw session data — only the distilled summary.
+
+OUTPUT: Returns markdown starting with "## Session Recap" containing sections: Project State, What Was Built, Key Decisions, Errors Resolved, Unfinished/In Progress, File Map. Empty sections are omitted. Output size is auto-calculated (1K-30K tokens) based on session density.
+
+WHEN TO USE: At the start of a new session when the user asks to restore context, recall previous work, or continue where they left off.
+
+FAILURE MODES:
+- "No recent project detected" + list of available projects → Retry with an explicit project path from the list.
+- "Project directory not found" + available projects → The project path was misspelled or encoded wrong. Retry with a path from the available list.
+- "No session files found" → The project directory exists but has no sessions. Try a different project.
+- "No models available" → CLIProxyAPI or Ollama is not running. Tell the user to start their model provider.
+- "Session Recap Failed" with error details → Both summarization passes failed. Retry with fewer sessions (sessions=1) or a different model.
+- "Triage Only" heading → Partial success. The triage pass worked but the full recap failed. The output still contains useful structured data. Do not retry.`,
     sessionRecapSchema.shape,
     async (input) => {
       logger.info(`session_recap: recapping ${input.sessions} sessions`);

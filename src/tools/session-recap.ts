@@ -331,11 +331,11 @@ export async function sessionRecap(
   try {
     bundle = readSessions(input.project, input.sessions);
   } catch (err) {
-    return `## Session Recap Failed\n\n${err instanceof Error ? err.message : String(err)}`;
+    return `## Session Recap Failed\n\n${err instanceof Error ? err.message : String(err)}\n\n**Recovery:** If the project was not found, retry with an explicit project path. Run session_recap with the project parameter set to one of the available projects listed above.`;
   }
 
   if (bundle.sessions.length === 0) {
-    return "## Session Recap\n\nNo sessions found to recap.";
+    return "## Session Recap Failed\n\nNo sessions found to recap. The project directory exists but contains no .jsonl session files.\n\n**Recovery:** Try a different project path, or increase the sessions count. If the user recently started using Claude Code on this project, there may not be any history yet.";
   }
 
   const sessionText = formatSessionsForPrompt(bundle);
@@ -346,7 +346,7 @@ export async function sessionRecap(
   // Step 2: Pick a model
   const model = await pickRecapModel(provider, input.model);
   if (!model) {
-    return "## Session Recap Failed\n\nNo models available. Make sure CLIProxyAPI or Ollama is running.";
+    return "## Session Recap Failed\n\nNo models available for summarization.\n\n**Recovery:** The user needs to start a model provider. Tell them to start CLIProxyAPI or Ollama, then retry. You can also verify provider status by calling list_models first.";
   }
 
   logger.info(`session_recap: using model ${model}`);
@@ -454,7 +454,7 @@ export async function sessionRecap(
       return formatTriageFallback(triage, bundle, model);
     }
 
-    return `## Session Recap Failed\n\nBoth triage and recap passes failed. Error: ${err instanceof Error ? err.message : String(err)}`;
+    return `## Session Recap Failed\n\nBoth triage and recap passes failed. Error: ${err instanceof Error ? err.message : String(err)}\n\n**Recovery:** Retry with fewer sessions (sessions=1) to reduce input size, or specify a different model. If the error mentions a timeout or rate limit, wait a moment and retry.`;
   }
 }
 
