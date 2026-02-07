@@ -5,11 +5,25 @@
 <h1 align="center">HydraMCP</h1>
 <p align="center">Connect agents to agents.</p>
 
-An MCP server that lets Claude Code query any LLM through your existing subscriptions. No extra API keys, no per-token billing. Just your monthly subscriptions working together from one terminal.
+An MCP server that lets Claude Code query any LLM — compare, vote, and synthesize across GPT, Gemini, Claude, and local models from one terminal.
+
+## Quick Start
+
+```bash
+npx hydramcp setup
+```
+
+That's it. The wizard walks you through everything — API keys, subscriptions, local models. At the end it gives you the one-liner to add to Claude Code.
+
+Or if you already have API keys:
+
+```bash
+claude mcp add hydramcp -e OPENAI_API_KEY=sk-... -- npx hydramcp
+```
 
 ## What It Looks Like
 
-Four models, four ecosystems, one prompt. This is real output from a live session:
+Four models, four ecosystems, one prompt. Real output from a live session:
 
 ```
 > compare gpt-5-codex, gemini-3, claude-sonnet, and local qwen on this function review
@@ -24,7 +38,7 @@ Four models, four ecosystems, one prompt. This is real output from a live sessio
 | ollama/qwen2.5-coder:14b   | 8407ms          | 187    |
 ```
 
-All four independently found the same async bug. Then each one caught something different the others missed. GPT-5 was fastest, Gemini was most thorough, Claude gave the fix direction, Qwen explained the why. Different training, different strengths, one comparison.
+All four independently found the same async bug. Then each one caught something different the others missed.
 
 And this is consensus with a local judge:
 
@@ -38,166 +52,140 @@ Agreement: 3/3 models (100%)
 Judge: ollama/qwen2.5-coder:14b (686ms)
 ```
 
-Three cloud models polled, local model judging them. 686ms to evaluate agreement, no quota used.
+Three cloud models polled, local model judging them. 686ms to evaluate agreement.
 
-## Five Tools
+## Tools
 
-- **list_models** - See what's available across all your providers
-- **ask_model** - Query any model and get a response back
-- **compare_models** - Same prompt to 2-5 models in parallel, side by side with brief/detailed format
-- **consensus** - Poll 3-7 models, a judge model evaluates agreement, returns one answer with a confidence score
-- **synthesize** - Fan out to multiple models, then combine their best ideas into one answer that's better than any individual response
+| Tool | What It Does |
+|------|-------------|
+| **list_models** | See what's available across all providers |
+| **ask_model** | Query any model, optional response distillation |
+| **compare_models** | Same prompt to 2-5 models in parallel |
+| **consensus** | Poll 3-7 models, LLM-as-judge evaluates agreement |
+| **synthesize** | Combine best ideas from multiple models into one answer |
+| **analyze_file** | Offload file analysis to a worker model |
+| **smart_read** | Extract specific code sections without reading the whole file |
+| **session_recap** | Restore context from previous Claude Code sessions |
 
-From inside Claude Code you just say things like:
+From inside Claude Code, just say things like:
 - "ask gpt-5 to review this function"
 - "compare gemini and claude on this approach"
 - "get consensus from 3 models on whether this is thread safe"
-- "synthesize responses from gpt-5, gemini, claude, and qwen on how to design this API"
-
-It just works. No browser tabs, no copy pasting between apps.
+- "synthesize responses from all models on how to design this API"
 
 ## How It Works
 
 ```
-You in Claude Code
+Claude Code
     |
     HydraMCP (MCP Server)
     |
-    Provider Interface
-    |-- CLIProxyAPI  -> cloud models (OpenAI, Google, Anthropic, etc.)
-    |-- Ollama       -> local models (your hardware)
+    SmartProvider (circuit breaker, cache, metrics)
+    |
+    MultiProvider (routes to the right backend)
+    |
+    |-- OpenAI     -> api.openai.com (API key)
+    |-- Google     -> Gemini API (API key)
+    |-- Anthropic  -> api.anthropic.com (API key)
+    |-- Sub        -> CLI tools (Gemini CLI, Claude Code, Codex CLI)
+    |-- Ollama     -> local models (your hardware)
 ```
 
-HydraMCP sits between Claude Code and your model providers. It routes requests to the right backend, runs comparisons in parallel, and formats results to keep your context window small.
+## Three Ways to Connect Models
 
-The consensus tool uses an LLM-as-judge approach. Instead of naive keyword matching, it picks a model not in the poll and has it evaluate whether the responses actually agree. It understands that "start with a monolith" and "monolith because it's simpler" are the same answer.
+### API Keys (fastest setup)
 
-The synthesize tool goes further. It collects responses from multiple models, then a synthesizer model reads all of them and builds one combined answer. Best structure from one, best insights from another, best examples from a third. The result is better than any single model could produce alone.
+Set environment variables. HydraMCP auto-detects them.
 
-## Setup
+| Variable | Provider |
+|----------|----------|
+| `OPENAI_API_KEY` | OpenAI (GPT-4o, GPT-5, o3, etc.) |
+| `GOOGLE_API_KEY` | Google Gemini (2.5 Flash, Pro, etc.) |
+| `ANTHROPIC_API_KEY` | Anthropic Claude (Opus, Sonnet, Haiku) |
 
-You need Node.js 18+, Claude Code, and at least one backend. The whole process takes about 5 minutes.
+### Subscriptions (use your monthly plan)
 
-### Step 1: Set Up a Backend
-
-You need at least one of these. Both is ideal.
-
-#### CLIProxyAPI (Cloud Models)
-
-[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) turns your existing subscriptions (ChatGPT Plus, Claude Pro, Gemini, etc.) into a local API. You authenticate once per provider, and it handles the rest.
-
-**Get the binary:**
-
-| Platform | Install |
-|----------|---------|
-| Windows | Download from [releases](https://github.com/router-for-me/CLIProxyAPI/releases) (`windows_amd64.zip`) |
-| macOS | `brew install cliproxyapi` |
-| Linux | `curl -fsSL https://raw.githubusercontent.com/brokechubb/cliproxyapi-installer/refs/heads/master/cliproxyapi-installer \| bash` |
-
-**Create `config.yaml` next to the binary:**
-
-```yaml
-port: 8317
-auth-dir: "~/.cli-proxy-api"
-api-keys:
-  - "sk-my-local-key"
-```
-
-The API key is a local passphrase you make up. It sits between HydraMCP and CLIProxyAPI on your machine. Not a provider key.
-
-**Authenticate your subscriptions:**
-
-Each subscription is one login command. A browser opens, you sign in with your existing account, done.
+Already paying for ChatGPT Plus, Claude Pro, or Gemini Advanced? HydraMCP wraps the CLI tools those subscriptions include. No API billing.
 
 ```bash
-# Pick whichever subscriptions you have:
-./cli-proxy-api --codex-login          # ChatGPT Plus / Codex
-./cli-proxy-api --claude-login         # Claude Pro
-./cli-proxy-api --login                # Google Gemini
-./cli-proxy-api --antigravity-login    # Antigravity (free, gives Gemini 3)
+npx hydramcp setup   # auto-installs CLIs and runs auth
 ```
 
-You can authenticate as many as you want. Each one adds models to your pool. Run the same command again with a different account to add multiple credentials per provider.
+The setup wizard detects which CLIs you have, installs missing ones, and walks you through authentication. Each CLI authenticates via browser once — then it's stored forever.
 
-**Start it:**
+| Subscription | CLI Tool | What You Get |
+|-------------|----------|-------------|
+| Gemini Advanced | `gemini` | Gemini 2.5 Flash, Pro, etc. |
+| Claude Pro/Max | `claude` | Claude Opus, Sonnet, Haiku |
+| ChatGPT Plus/Pro | `codex` | GPT-5, o3, Codex models |
 
-```bash
-./cli-proxy-api
-```
+### Local Models
 
-Runs on `localhost:8317`. Leave it running.
-
-#### Ollama (Local Models)
-
-[Install Ollama](https://ollama.com), then pull a model:
+Install [Ollama](https://ollama.com), pull a model, done. Auto-detected.
 
 ```bash
 ollama pull qwen2.5-coder:14b
 ```
 
-Runs on `localhost:11434` by default. Good for fast operations like judging consensus without using cloud quota.
+### Mix and Match
 
-### Step 2: Install HydraMCP
+All three methods stack. Use API keys for some providers, subscriptions for others, and Ollama for local. They all show up in `list_models` together.
+
+Route explicitly with prefixes:
+- `openai/gpt-5` — force OpenAI API
+- `google/gemini-2.5-flash` — force Google API
+- `sub/gemini-2.5-flash` — force subscription CLI
+- `ollama/qwen2.5-coder:14b` — force local
+- `gpt-5` — auto-detect (tries each provider)
+
+## Setup Details
+
+### Option A: npx (recommended)
+
+```bash
+npx hydramcp setup                           # interactive wizard
+claude mcp add hydramcp -- npx hydramcp      # register with Claude Code
+```
+
+Config is saved to `~/.hydramcp/.env` and persists across npx runs.
+
+### Option B: Clone
 
 ```bash
 git clone https://github.com/Pickle-Pixel/HydraMCP.git
 cd HydraMCP
-npm install
-npm run build
+npm install && npm run build
+claude mcp add hydramcp -- node /path/to/HydraMCP/dist/index.js
 ```
 
-### Step 3: Configure
+### Verify
 
-```bash
-cp .env.example .env
-```
+Restart Claude Code and say "list models". You should see everything you configured.
 
-Edit `.env` to match your backends:
+## Architecture
 
-```env
-# CLIProxyAPI (skip if not using)
-CLIPROXYAPI_URL=http://localhost:8317
-CLIPROXYAPI_KEY=sk-my-local-key
+HydraMCP wraps all providers in a **SmartProvider** layer that adds:
 
-# Ollama (skip if not using)
-OLLAMA_URL=http://localhost:11434
-```
-
-The `CLIPROXYAPI_KEY` should match the key you put in `config.yaml`.
-
-### Step 4: Register with Claude Code
-
-```bash
-claude mcp add hydramcp -s user -- node /path/to/HydraMCP/dist/index.js
-```
-
-Restart Claude Code. Type "list models" and you should see everything you authenticated.
-
-### Model Routing
-
-You can target specific backends with prefixes:
-
-- `cliproxy/gpt-5` - explicitly use CLIProxyAPI
-- `ollama/qwen2.5-coder:14b` - explicitly use Ollama
-- `gpt-5` - auto-detect (tries each provider until one handles it)
-
-## Credits
-
-- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) powers the subscription-based cloud backend
-- [Ollama](https://ollama.com) powers the local model backend
-- Built with the [MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk) and [Zod](https://github.com/colinhacks/zod)
-
-I built the MCP tool layer, routing logic, and multi-model orchestration on top of these. Credit where it's due.
+- **Circuit breaker** — per-model failure tracking. After 3 failures, the model is disabled for 60s and auto-recovers.
+- **Response cache** — SHA-256 keyed, 15-minute TTL. Identical queries are served instantly.
+- **Metrics** — per-model query counts, latency, token usage, cache hit rates.
+- **Response distillation** — set `max_response_tokens` on any query and a cheap model compresses the response while preserving code, errors, and specifics.
 
 ## Contributing
 
-Want to add a provider? The interface is simple. Check `src/providers/provider.ts` for the contract and `src/providers/ollama.ts` for a working example. Implement `healthCheck()`, `listModels()`, and `query()`, register it in `src/index.ts`, and you're done.
+Want to add a provider? The interface is three methods:
 
-Providers we'd love to see:
-- LM Studio
-- OpenRouter
-- Direct API keys (OpenAI, Anthropic, Google)
-- Anything else that speaks HTTP
+```typescript
+interface Provider {
+  healthCheck(): Promise<boolean>;
+  listModels(): Promise<ModelInfo[]>;
+  query(model: string, prompt: string, options?: QueryOptions): Promise<QueryResponse>;
+}
+```
+
+See `src/providers/ollama.ts` for a working example. Implement it, register in `src/index.ts`, done.
+
+Providers we'd love to see: LM Studio, OpenRouter, Groq, Together AI, or anything that speaks HTTP.
 
 ## License
 
