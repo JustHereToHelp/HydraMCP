@@ -15,6 +15,7 @@ import { compareModelsSchema, compareModels } from "./tools/compare-models.js";
 import { consensusSchema, consensus } from "./tools/consensus.js";
 import { synthesizeSchema, synthesize } from "./tools/synthesize.js";
 import { sessionRecapSchema, sessionRecap } from "./tools/session-recap.js";
+import { analyzeFileSchema, analyzeFile } from "./tools/analyze-file.js";
 import { logger } from "./utils/logger.js";
 
 export function createServer(provider: Provider): McpServer {
@@ -193,6 +194,38 @@ FAILURE MODES:
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         logger.error(`session_recap failed: ${message}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // --- analyze_file ---
+  server.tool(
+    "analyze_file",
+    `Offload file analysis to a worker model. The file is read server-side — it never enters your context window. You send a file path and a question, and get back only the analysis.
+
+OUTPUT: Markdown with the model's analysis of the file, including file metadata (path, lines, chars), latency, and token usage. If max_response_tokens is set and compression occurred, includes distillation metadata (original tokens, compressed tokens, compressor model, compressor latency).
+
+WHEN TO USE: When you need to analyze, review, or search a file but want to avoid reading it yourself. Especially valuable for large files (1000+ lines) where reading would consume significant context. The file is sent to a large-context model (Gemini 1M) that can process the entire file at once.
+
+FAILURE MODES:
+- "File not found" → The path is wrong. Retry with the correct absolute path.
+- "Binary file detected" → Only text files are supported. Do not retry with this file.
+- "File too large" → The file exceeds 800K chars. Try analyzing a specific section or ask the user to split the file.
+- "No models available" → CLIProxyAPI or Ollama is not running. Tell the user to start their model provider.
+- "Model query failed" → Try a different model or check provider status with list_models.`,
+    analyzeFileSchema.shape,
+    async (input) => {
+      logger.info(`analyze_file: ${input.file_path}`);
+      try {
+        const result = await analyzeFile(provider, input);
+        return { content: [{ type: "text" as const, text: result }] };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error(`analyze_file failed: ${message}`);
         return {
           content: [{ type: "text" as const, text: `Error: ${message}` }],
           isError: true,

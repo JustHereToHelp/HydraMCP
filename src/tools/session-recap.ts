@@ -22,6 +22,7 @@ import {
   formatSessionsForPrompt,
   type SessionBundle,
 } from "../utils/session-reader.js";
+import { pickLargeContextModel } from "../utils/model-selection.js";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -82,58 +83,6 @@ interface TriageResult {
   features_built: TriageItem[];
   unfinished_work: TriageItem[];
   total_meaningful_events: number;
-}
-
-// ---------------------------------------------------------------------------
-// Model selection
-// ---------------------------------------------------------------------------
-
-/**
- * Preferred models for recap, in priority order.
- * We want large-context models that can handle 500K+ tokens of session data.
- * Gemini 2.5 Flash is ideal: 1M context, fast, cheap on subscription quota.
- */
-const PREFERRED_RECAP_MODELS = [
-  "gemini-2.5-flash",       // 1M context, fast, best for this use case
-  "gemini-2.5-flash-lite",  // 1M context, fastest
-  "gemini-3-flash",         // likely 1M context
-  "gemini-3-pro",           // likely 1M+ context
-  "gemini-2.5-pro",         // 1M context, slower but smarter
-];
-
-/**
- * Pick a model suitable for recap — prefer large-context models (Gemini).
- * Falls back to any available model.
- */
-async function pickRecapModel(
-  provider: Provider,
-  preferredModel?: string
-): Promise<string | null> {
-  if (preferredModel) return preferredModel;
-
-  try {
-    const available = await provider.listModels();
-    if (available.length === 0) return null;
-
-    // Try preferred models in priority order
-    for (const preferred of PREFERRED_RECAP_MODELS) {
-      const match = available.find((m) =>
-        m.id.toLowerCase().includes(preferred)
-      );
-      if (match) return match.id;
-    }
-
-    // Fallback: any gemini model
-    const anyGemini = available.find((m) =>
-      m.id.toLowerCase().includes("gemini")
-    );
-    if (anyGemini) return anyGemini.id;
-
-    // Last resort: any model
-    return available[0].id;
-  } catch {
-    return null;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -344,7 +293,7 @@ export async function sessionRecap(
   );
 
   // Step 2: Pick a model
-  const model = await pickRecapModel(provider, input.model);
+  const model = await pickLargeContextModel(provider, input.model);
   if (!model) {
     return "## Session Recap Failed\n\nNo models available for summarization.\n\n**Recovery:** The user needs to start a model provider. Tell them to start CLIProxyAPI or Ollama, then retry. You can also verify provider status by calling list_models first.";
   }
