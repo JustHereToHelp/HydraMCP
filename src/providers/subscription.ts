@@ -33,6 +33,8 @@ interface CLIBackend {
   parseOutput(stdout: string): string;
   /** Models available through this subscription */
   models: Array<{ id: string; name: string }>;
+  /** If true, prompt is written to stdin instead of passed as an arg */
+  stdinPrompt?: boolean;
   /** Query timeout in ms */
   timeout: number;
 }
@@ -42,11 +44,23 @@ const GEMINI_CLI: CLIBackend = {
   displayName: "Gemini CLI",
   command: "gemini",
   versionArgs: ["--version"],
-  buildArgs(model, prompt) {
-    return ["-p", prompt, "-m", model];
+  buildArgs(model) {
+    // Gemini CLI: -p - reads prompt from stdin (avoids shell quoting issues)
+    // --output-format json gives structured output
+    return ["--output-format", "json", "-m", model, "-p", "-"];
   },
+  stdinPrompt: true,
   parseOutput(stdout) {
-    return stdout.trim();
+    // Gemini JSON output: { response: "...", stats: { ... } }
+    try {
+      const data = JSON.parse(stdout);
+      if (data.response) return String(data.response).trim();
+      if (data.text) return String(data.text).trim();
+      if (data.content) return String(data.content).trim();
+      return stdout.trim();
+    } catch {
+      return stdout.trim();
+    }
   },
   models: [
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
@@ -91,10 +105,29 @@ const CODEX_CLI: CLIBackend = {
   command: "codex",
   versionArgs: ["--version"],
   buildArgs(_model, prompt) {
-    // Codex exec streams progress to stderr, final message to stdout
-    return ["exec", prompt];
+    // Codex exec: prompt must be a single argument.
+    // Pass "-" to read from stdin instead — avoids shell quoting issues.
+    return ["exec", "-"];
   },
+  /** Codex reads prompt from stdin when "-" is passed */
+  stdinPrompt: true,
   parseOutput(stdout) {
+    // Codex exec outputs header lines (model info, session id, etc.),
+    // then "user\n<prompt>\n", then "codex\n<response>\n", then "tokens used\n..."
+    // Extract the codex response block.
+    const lines = stdout.split("\n");
+    const codexIdx = lines.findIndex((l) => l.trim() === "codex");
+    if (codexIdx !== -1) {
+      // Everything between "codex" and "tokens used" is the response
+      const tokensIdx = lines.findIndex(
+        (l, i) => i > codexIdx && l.trim().startsWith("tokens used")
+      );
+      const end = tokensIdx !== -1 ? tokensIdx : lines.length;
+      return lines
+        .slice(codexIdx + 1, end)
+        .join("\n")
+        .trim();
+    }
     return stdout.trim();
   },
   models: [
@@ -120,7 +153,8 @@ interface ExecResult {
 function execCLI(
   command: string,
   args: string[],
-  timeout: number
+  timeout: number,
+  stdinData?: string
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     let child: ChildProcess;
@@ -161,7 +195,10 @@ function execCLI(
       resolve({ stdout, stderr, exitCode: code ?? 1 });
     });
 
-    // Close stdin — we pass the prompt via args, not stdin
+    // Write prompt to stdin if needed, then close
+    if (stdinData) {
+      child.stdin?.write(stdinData);
+    }
     child.stdin?.end();
   });
 }
@@ -254,7 +291,8 @@ export class SubscriptionProvider implements Provider {
       `Subscription: querying ${backend.displayName} (${model})`
     );
 
-    const result = await execCLI(backend.command, args, backend.timeout);
+    const stdinData = backend.stdinPrompt ? prompt : undefined;
+    const result = await execCLI(backend.command, args, backend.timeout, stdinData);
 
     if (result.exitCode !== 0) {
       throw new Error(
