@@ -23,6 +23,8 @@ export interface QueryOptions {
 export interface QueryResponse {
   model: string;
   content: string;
+  /** Chain-of-thought from reasoning/thinking models (if available) */
+  reasoning_content?: string;
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;

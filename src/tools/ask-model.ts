@@ -86,5 +86,9 @@ function formatResponse(response: QueryResponse, format: "brief" | "detailed"): 
     lines.push(`**Note:** Response ended due to: ${response.finish_reason}`);
   }
 
+  if (response.reasoning_content) {
+    lines.push(`**Reasoning:** Model produced ${response.reasoning_content.length} chars of chain-of-thought`);
+  }
+
   return lines.join("\n");
 }

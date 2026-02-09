@@ -8,6 +8,7 @@
  */
 
 import { Provider, ModelInfo, QueryOptions, QueryResponse } from "./provider.js";
+import { isReasoningModel, adjustMaxTokens } from "../utils/reasoning-models.js";
 
 export class CLIProxyAPIProvider implements Provider {
   name = "CLIProxyAPI";
@@ -62,6 +63,11 @@ export class CLIProxyAPIProvider implements Provider {
   ): Promise<QueryResponse> {
     const startTime = Date.now();
 
+    const reasoning = isReasoningModel(model);
+    const effectiveMaxTokens = options?.max_tokens !== undefined
+      ? adjustMaxTokens(model, options.max_tokens)
+      : undefined;
+
     const body: Record<string, unknown> = {
       model,
       messages: [
@@ -74,7 +80,11 @@ export class CLIProxyAPIProvider implements Provider {
     };
 
     if (options?.temperature !== undefined) body.temperature = options.temperature;
-    if (options?.max_tokens !== undefined) body.max_tokens = options.max_tokens;
+    if (effectiveMaxTokens !== undefined) {
+      body.max_tokens = effectiveMaxTokens;
+      // Some providers use max_completion_tokens for reasoning models
+      if (reasoning) body.max_completion_tokens = effectiveMaxTokens;
+    }
 
     const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
       method: "POST",
@@ -89,7 +99,7 @@ export class CLIProxyAPIProvider implements Provider {
 
     const data = (await res.json()) as {
       choices?: Array<{
-        message?: { content?: string };
+        message?: { content?: string; reasoning_content?: string };
         finish_reason?: string;
       }>;
       usage?: {
@@ -102,9 +112,19 @@ export class CLIProxyAPIProvider implements Provider {
     const latency_ms = Date.now() - startTime;
     const choice = data.choices?.[0];
 
+    // For reasoning models: if content is empty but reasoning_content exists,
+    // the model burned all tokens on thinking. Surface the reasoning as fallback.
+    let content = choice?.message?.content ?? "";
+    const reasoningContent = choice?.message?.reasoning_content;
+
+    if (!content && reasoningContent && reasoning) {
+      content = `*[Model produced reasoning but no final answer — showing reasoning output]*\n\n${reasoningContent}`;
+    }
+
     return {
       model,
-      content: choice?.message?.content ?? "",
+      content,
+      reasoning_content: reasoningContent,
       usage: data.usage,
       latency_ms,
       finish_reason: choice?.finish_reason,
