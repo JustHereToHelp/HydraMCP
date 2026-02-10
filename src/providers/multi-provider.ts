@@ -18,7 +18,7 @@ import { logger } from "../utils/logger.js";
 import { CircuitBreaker, CircuitOpenError } from "../utils/circuit-breaker.js";
 import { getFallbacks } from "../utils/fallback-chains.js";
 
-const BLOCKED_MODELS = new Set(["gpt-5.3-codex"]);
+const BLOCKED_MODELS = new Set<string>([]);
 
 export class MultiProvider implements Provider {
   name = "HydraMCP";
