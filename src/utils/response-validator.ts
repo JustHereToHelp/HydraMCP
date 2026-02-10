@@ -14,7 +14,7 @@ export class EmptyResponseError extends Error {
 }
 
 export function validateResponse(response: QueryResponse): QueryResponse {
-  if (response.content.trim().length < 10 && !response.reasoning_content) {
+  if (response.content.trim().length === 0 && !response.reasoning_content) {
     throw new EmptyResponseError(response.model);
   }
 
