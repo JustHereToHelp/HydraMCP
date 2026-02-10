@@ -9,6 +9,10 @@
 
 import { Provider, ModelInfo, QueryOptions, QueryResponse } from "./provider.js";
 import { isReasoningModel, adjustMaxTokens } from "../utils/reasoning-models.js";
+import { fetchWithTimeout } from "../utils/fetch-with-timeout.js";
+import { withRetry } from "../utils/retry.js";
+import { validateResponse } from "../utils/response-validator.js";
+import { logQuery, generateRequestId } from "../utils/logger.js";
 
 export class CLIProxyAPIProvider implements Provider {
   name = "CLIProxyAPI";
@@ -28,7 +32,7 @@ export class CLIProxyAPIProvider implements Provider {
 
   async healthCheck(): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/v1/models`, {
+      const res = await fetchWithTimeout(`${this.baseUrl}/v1/models`, {
         headers: this.headers(),
       });
       return res.ok;
@@ -38,7 +42,7 @@ export class CLIProxyAPIProvider implements Provider {
   }
 
   async listModels(): Promise<ModelInfo[]> {
-    const res = await fetch(`${this.baseUrl}/v1/models`, {
+    const res = await fetchWithTimeout(`${this.baseUrl}/v1/models`, {
       headers: this.headers(),
     });
     if (!res.ok) {
@@ -62,6 +66,7 @@ export class CLIProxyAPIProvider implements Provider {
     options?: QueryOptions
   ): Promise<QueryResponse> {
     const startTime = Date.now();
+    const requestId = generateRequestId();
 
     const reasoning = isReasoningModel(model);
     const effectiveMaxTokens = options?.max_tokens !== undefined
@@ -86,48 +91,60 @@ export class CLIProxyAPIProvider implements Provider {
       if (reasoning) body.max_completion_tokens = effectiveMaxTokens;
     }
 
-    const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify(body),
-    });
+    try {
+      const result = await withRetry(async () => {
+        const res = await fetchWithTimeout(`${this.baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: this.headers(),
+          body: JSON.stringify(body),
+        });
 
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Model query failed (${res.status}): ${errorText}`);
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`Model query failed (${res.status}): ${errorText}`);
+        }
+
+        const data = (await res.json()) as {
+          choices?: Array<{
+            message?: { content?: string; reasoning_content?: string };
+            finish_reason?: string;
+          }>;
+          usage?: {
+            prompt_tokens: number;
+            completion_tokens: number;
+            total_tokens: number;
+          };
+        };
+
+        const latency_ms = Date.now() - startTime;
+        const choice = data.choices?.[0];
+
+        // For reasoning models: if content is empty but reasoning_content exists,
+        // the model burned all tokens on thinking. Surface the reasoning as fallback.
+        let content = choice?.message?.content ?? "";
+        const reasoningContent = choice?.message?.reasoning_content;
+
+        if (!content && reasoningContent && reasoning) {
+          content = `*[Model produced reasoning but no final answer — showing reasoning output]*\n\n${reasoningContent}`;
+        }
+
+        const response: QueryResponse = {
+          model,
+          content,
+          reasoning_content: reasoningContent,
+          usage: data.usage,
+          latency_ms,
+          finish_reason: choice?.finish_reason,
+        };
+
+        return validateResponse(response);
+      });
+
+      logQuery({ requestId, model, latency_ms: result.latency_ms, status: "ok", finish_reason: result.finish_reason });
+      return result;
+    } catch (err) {
+      logQuery({ requestId, model, latency_ms: Date.now() - startTime, status: "error" });
+      throw err;
     }
-
-    const data = (await res.json()) as {
-      choices?: Array<{
-        message?: { content?: string; reasoning_content?: string };
-        finish_reason?: string;
-      }>;
-      usage?: {
-        prompt_tokens: number;
-        completion_tokens: number;
-        total_tokens: number;
-      };
-    };
-
-    const latency_ms = Date.now() - startTime;
-    const choice = data.choices?.[0];
-
-    // For reasoning models: if content is empty but reasoning_content exists,
-    // the model burned all tokens on thinking. Surface the reasoning as fallback.
-    let content = choice?.message?.content ?? "";
-    const reasoningContent = choice?.message?.reasoning_content;
-
-    if (!content && reasoningContent && reasoning) {
-      content = `*[Model produced reasoning but no final answer — showing reasoning output]*\n\n${reasoningContent}`;
-    }
-
-    return {
-      model,
-      content,
-      reasoning_content: reasoningContent,
-      usage: data.usage,
-      latency_ms,
-      finish_reason: choice?.finish_reason,
-    };
   }
 }

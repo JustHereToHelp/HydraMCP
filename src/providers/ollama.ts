@@ -17,6 +17,10 @@
  */
 
 import { Provider, ModelInfo, QueryOptions, QueryResponse } from "./provider.js";
+import { fetchWithTimeout } from "../utils/fetch-with-timeout.js";
+import { withRetry } from "../utils/retry.js";
+import { validateResponse } from "../utils/response-validator.js";
+import { logQuery, generateRequestId } from "../utils/logger.js";
 
 export class OllamaProvider implements Provider {
   name = "Ollama";
@@ -28,7 +32,7 @@ export class OllamaProvider implements Provider {
 
   async healthCheck(): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/tags`);
+      const res = await fetchWithTimeout(`${this.baseUrl}/api/tags`);
       return res.ok;
     } catch {
       return false;
@@ -36,7 +40,7 @@ export class OllamaProvider implements Provider {
   }
 
   async listModels(): Promise<ModelInfo[]> {
-    const res = await fetch(`${this.baseUrl}/api/tags`);
+    const res = await fetchWithTimeout(`${this.baseUrl}/api/tags`);
     if (!res.ok) {
       throw new Error(`Failed to list Ollama models: ${res.status}`);
     }
@@ -58,6 +62,8 @@ export class OllamaProvider implements Provider {
     options?: QueryOptions
   ): Promise<QueryResponse> {
     const startTime = Date.now();
+    const requestId = generateRequestId();
+    const ollamaTimeout = parseInt(process.env.HYDRA_OLLAMA_TIMEOUT_MS ?? "180000", 10);
 
     // Ollama supports OpenAI-compatible endpoint
     const body: Record<string, unknown> = {
@@ -75,39 +81,55 @@ export class OllamaProvider implements Provider {
       body.options = { temperature: options.temperature };
     }
 
-    // Use Ollama's native chat endpoint (more reliable than /v1 compat)
-    const res = await fetch(`${this.baseUrl}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    try {
+      const result = await withRetry(async () => {
+        // Use Ollama's native chat endpoint (more reliable than /v1 compat)
+        const res = await fetchWithTimeout(
+          `${this.baseUrl}/api/chat`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+          ollamaTimeout
+        );
 
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Ollama query failed (${res.status}): ${errorText}`);
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`Ollama query failed (${res.status}): ${errorText}`);
+        }
+
+        const data = (await res.json()) as {
+          message?: { content?: string };
+          done_reason?: string;
+          prompt_eval_count?: number;
+          eval_count?: number;
+        };
+
+        const latency_ms = Date.now() - startTime;
+        const prompt_tokens = data.prompt_eval_count ?? 0;
+        const completion_tokens = data.eval_count ?? 0;
+
+        const response: QueryResponse = {
+          model,
+          content: data.message?.content ?? "",
+          usage: {
+            prompt_tokens,
+            completion_tokens,
+            total_tokens: prompt_tokens + completion_tokens,
+          },
+          latency_ms,
+          finish_reason: data.done_reason ?? "stop",
+        };
+
+        return validateResponse(response);
+      });
+
+      logQuery({ requestId, model, latency_ms: result.latency_ms, status: "ok", finish_reason: result.finish_reason });
+      return result;
+    } catch (err) {
+      logQuery({ requestId, model, latency_ms: Date.now() - startTime, status: "error" });
+      throw err;
     }
-
-    const data = (await res.json()) as {
-      message?: { content?: string };
-      done_reason?: string;
-      prompt_eval_count?: number;
-      eval_count?: number;
-    };
-
-    const latency_ms = Date.now() - startTime;
-    const prompt_tokens = data.prompt_eval_count ?? 0;
-    const completion_tokens = data.eval_count ?? 0;
-
-    return {
-      model,
-      content: data.message?.content ?? "",
-      usage: {
-        prompt_tokens,
-        completion_tokens,
-        total_tokens: prompt_tokens + completion_tokens,
-      },
-      latency_ms,
-      finish_reason: data.done_reason ?? "stop",
-    };
   }
 }

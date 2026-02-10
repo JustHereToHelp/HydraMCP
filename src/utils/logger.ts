@@ -7,6 +7,8 @@
  * logging goes to stderr, which Claude Code ignores.
  */
 
+import crypto from "node:crypto";
+
 type LogLevel = "debug" | "info" | "warn" | "error";
 
 const LEVEL_PRIORITY: Record<LogLevel, number> = {
@@ -30,3 +32,27 @@ export const logger = {
   warn: (msg: string) => log("warn", msg),
   error: (msg: string) => log("error", msg),
 };
+
+export function createRequestLogger(requestId: string) {
+  const prefix = `[req:${requestId}]`;
+  return {
+    debug: (msg: string) => log("debug", `${prefix} ${msg}`),
+    info: (msg: string) => log("info", `${prefix} ${msg}`),
+    warn: (msg: string) => log("warn", `${prefix} ${msg}`),
+    error: (msg: string) => log("error", `${prefix} ${msg}`),
+  };
+}
+
+export function logQuery(data: {
+  requestId: string;
+  model: string;
+  latency_ms: number;
+  status: string;
+  finish_reason?: string;
+}): void {
+  logger.info(JSON.stringify({ type: "query", ...data }));
+}
+
+export function generateRequestId(): string {
+  return crypto.randomUUID().slice(0, 8);
+}

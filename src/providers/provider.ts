@@ -32,6 +32,9 @@ export interface QueryResponse {
   };
   latency_ms: number;
   finish_reason?: string;
+  warning?: string;
+  /** Set when a fallback model served this response instead of the requested one */
+  fallback_from?: string;
 }
 
 export interface Provider {
