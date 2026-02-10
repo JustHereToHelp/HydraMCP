@@ -72,6 +72,9 @@ export class CLIProxyAPIProvider implements Provider {
     const effectiveMaxTokens = options?.max_tokens !== undefined
       ? adjustMaxTokens(model, options.max_tokens)
       : undefined;
+    const requestTimeout = reasoning
+      ? parseInt(process.env.HYDRA_REASONING_TIMEOUT_MS ?? "180000", 10)
+      : undefined;
 
     const body: Record<string, unknown> = {
       model,
@@ -97,7 +100,7 @@ export class CLIProxyAPIProvider implements Provider {
           method: "POST",
           headers: this.headers(),
           body: JSON.stringify(body),
-        });
+        }, requestTimeout);
 
         if (!res.ok) {
           const errorText = await res.text();

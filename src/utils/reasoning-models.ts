@@ -19,6 +19,7 @@ const REASONING_PATTERNS: RegExp[] = [
   /\bo[13]$/i,         // OpenAI o1, o3
   /gemini.*think/i,    // Gemini thinking variants
   /gemini-3-pro/i,     // Gemini 3 Pro does internal reasoning
+  /kimi-k2/i,           // Moonshot Kimi K2 variants use reasoning tokens (k2, k2.5, k2-thinking)
 ];
 
 /**

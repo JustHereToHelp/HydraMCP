@@ -11,7 +11,7 @@ export class TimeoutError extends Error {
 }
 
 const DEFAULT_TIMEOUT_MS = parseInt(
-  process.env.HYDRA_TOTAL_TIMEOUT_MS ?? "30000",
+  process.env.HYDRA_TOTAL_TIMEOUT_MS ?? "120000",
   10
 );
 
